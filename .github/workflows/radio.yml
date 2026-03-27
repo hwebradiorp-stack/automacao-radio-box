@@ -1,25 +1,31 @@
-name: Download e Envio Radio
+name: Automacao Radio Mega.nz
 
 on:
   schedule:
-    # 08:00 UTC é 05:00 em Ribeirão Preto
+    # 08:00 UTC = 05:00 da manhã em Ribeirão Preto
     - cron: '0 8 * * *'
-  workflow_dispatch: # Botão para rodar na hora que você quiser
+  workflow_dispatch: # Botão para rodar manualmente
 
 jobs:
-  run_script:
+  upload_mega:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python
+      - name: Checkout do repositorio
+        uses: actions/checkout@v3
+
+      - name: Configurar Python 3.10
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
+
       - name: Instalar Bibliotecas
-        run: pip install boxsdk[jwt] requests
-      - name: Executar Automacao
+        # ESTA LINHA ABAIXO É A QUE RESOLVE O SEU ERRO
+        run: |
+          python -m pip install --upgrade pip
+          pip install mega.py requests
+
+      - name: Executar Script Mega
         env:
-          BOX_CLIENT_ID: ${{ secrets.BOX_CLIENT_ID }}
-          BOX_CLIENT_SECRET: ${{ secrets.BOX_CLIENT_SECRET }}
-          BOX_TOKEN: ${{ secrets.BOX_DEVELOPER_TOKEN }}
+          MEGA_EMAIL: ${{ secrets.MEGA_EMAIL }}
+          MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
         run: python main.py
