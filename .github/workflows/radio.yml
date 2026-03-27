@@ -1,0 +1,25 @@
+name: Download e Envio Radio
+
+on:
+  schedule:
+    # 08:00 UTC é 05:00 em Ribeirão Preto
+    - cron: '0 8 * * *'
+  workflow_dispatch: # Botão para rodar na hora que você quiser
+
+jobs:
+  run_script:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Instalar Bibliotecas
+        run: pip install boxsdk[jwt] requests
+      - name: Executar Automacao
+        env:
+          BOX_CLIENT_ID: ${{ secrets.BOX_CLIENT_ID }}
+          BOX_CLIENT_SECRET: ${{ secrets.BOX_CLIENT_SECRET }}
+          BOX_TOKEN: ${{ secrets.BOX_DEVELOPER_TOKEN }}
+        run: python main.py
