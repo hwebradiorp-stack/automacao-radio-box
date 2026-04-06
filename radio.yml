@@ -1,27 +1,38 @@
-name: Automacao Radio pCloud
+name: Automacao Radio Henrique Barbosa
 
 on:
   schedule:
-    - cron: '0 8 * * *' # Roda todo dia às 05:00 (Brasília)
-  workflow_dispatch: 
+    # Seg a Sex às 05:00 Brasil (08:00 UTC) - Roda links.txt
+    - cron: '0 8 * * 1-5'
+    # Sábados às 05:00 Brasil (08:00 UTC) - Roda links_fds.txt
+    - cron: '0 8 * * 6'
+  workflow_dispatch: # Permite rodar manualmente se precisar
 
 jobs:
-  upload:
+  executar_automacao:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+      - name: Checkout do Codigo
+        uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Configurar Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: Install Requests
+      - name: Instalar Dependencias
         run: pip install requests
 
-      - name: Run Script
+      - name: Processar Programas Diarios (Seg-Sex)
+        if: github.event.schedule == '0 8 * * 1-5' || github.event_name == 'workflow_dispatch'
         env:
           PCLOUD_EMAIL: ${{ secrets.PCLOUD_EMAIL }}
           PCLOUD_PASS: ${{ secrets.PCLOUD_PASS }}
-        run: python main.py
+        run: python main.py links.txt
+
+      - name: Processar Programas FDS (Sabados)
+        if: github.event.schedule == '0 8 * * 6'
+        env:
+          PCLOUD_EMAIL: ${{ secrets.PCLOUD_EMAIL }}
+          PCLOUD_PASS: ${{ secrets.PCLOUD_PASS }}
+        run: python main.py links_fds.txt
