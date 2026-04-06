@@ -1,15 +1,15 @@
-name: Automacao Radio Sem Senha
+name: Automacao Radio pCloud
 
 on:
   schedule:
-    - cron: '0 8 * * *'
+    - cron: '0 8 * * *' # Roda todo dia às 05:00 (Brasília)
   workflow_dispatch: 
 
 jobs:
   upload:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v3
 
       - name: Setup Python
@@ -21,4 +21,7 @@ jobs:
         run: pip install requests
 
       - name: Run Script
+        env:
+          PCLOUD_EMAIL: ${{ secrets.PCLOUD_EMAIL }}
+          PCLOUD_PASS: ${{ secrets.PCLOUD_PASS }}
         run: python main.py
