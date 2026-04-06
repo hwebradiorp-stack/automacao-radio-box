@@ -40,21 +40,24 @@ def compactar_arquivo(conteudo_audio, nome_programa, nome_bloco):
     with zipfile.ZipFile(nome_zip, 'w', zipfile.ZIP_DEFLATED) as zipf:
         zipf.write(caminho_temp_audio, arcname=nome_bloco)
     
-    os.remove(caminho_temp_audio)
+    if os.path.exists(caminho_temp_audio):
+        os.remove(caminho_temp_audio)
     return nome_zip
 
 def processar(arquivo_txt):
+    # Verifica se o arquivo de links existe antes de começar
     if not os.path.exists(arquivo_txt): 
-        print(f"⚠️ Arquivo {arquivo_txt} não encontrado.")
+        print(f"⚠️ Arquivo {arquivo_txt} não encontrado no repositório. Pulando...")
         return
 
     api = MediaFireApi()
     uploader = MediaFireUploader(api)
     
     try:
-        session = api.user_get_session_token(email=EMAIL, password=PASSWORD, application_id='25145')
+        # REMOVIDO 'application_id' para corrigir o erro de login
+        session = api.user_get_session_token(email=EMAIL, password=PASSWORD)
         api.session = session
-        print(f"🔓 Login ok para processar {arquivo_txt}")
+        print(f"🔓 Login ok! Iniciando: {arquivo_txt}")
     except Exception as e:
         print(f"❌ Erro de login no MediaFire: {e}")
         return
@@ -62,9 +65,12 @@ def processar(arquivo_txt):
     with open(arquivo_txt, 'r') as f:
         links = [line.strip() for line in f if "http" in line]
 
+    if not links:
+        print(f"Empty: Nao ha links em {arquivo_txt}")
+        return
+
     for url in links:
-        # Pausa para evitar bloqueio
-        time.sleep(random.randint(7, 15))
+        time.sleep(random.randint(5, 10))
 
         try:
             match = re.search(r"musica=(.*?)/(.*?\.mp3)", url)
@@ -92,18 +98,13 @@ def processar(arquivo_txt):
 
         except Exception as e:
             print(f"❌ Erro no link {url}: {e}")
-            time.sleep(10)
+            time.sleep(5)
 
 # 3. Execução Principal
 if __name__ == "__main__":
     if not EMAIL or not PASSWORD:
-        print("❌ Faltam os Secrets MF_EMAIL ou MF_PASSWORD.")
+        print("❌ Erro crítico: Você esqueceu de configurar MF_EMAIL e MF_PASSWORD nos Secrets do GitHub!")
     else:
-        # Processa a primeira lista
+        # Tenta processar os dois arquivos, mas não trava se um deles faltar
         processar('links.txt')
-        
-        # Pausa entre as listas
-        time.sleep(10)
-        
-        # Processa a segunda lista
         processar('links_fds.txt')
