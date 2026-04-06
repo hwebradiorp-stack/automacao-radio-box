@@ -5,6 +5,10 @@ import datetime
 import zipfile
 import time
 
+# Puxa as credenciais que você salvou no GitHub
+EMAIL = os.getenv('PCLOUD_EMAIL')
+PASSWORD = os.getenv('PCLOUD_PASS')
+
 def get_data_formatada():
     return datetime.datetime.now().strftime("%d-%m")
 
@@ -17,20 +21,27 @@ def compactar_arquivo(conteudo_audio, nome_programa, nome_bloco):
     
     return nome_zip
 
-def enviar_transfer_sh(caminho_arquivo):
-    # Envia para o serviço Transfer.sh (armazenamento temporário de 14 dias)
-    print(f"☁️ Fazendo upload de {caminho_arquivo}...")
-    with open(caminho_arquivo, 'rb') as f:
-        url = f"https://transfer.sh/{caminho_arquivo}"
-        r = requests.put(url, data=f)
+def enviar_pcloud(caminho_arquivo):
+    # API do pCloud para upload direto
+    url = "https://api.pcloud.com/uploadfile"
+    params = {
+        'username': EMAIL,
+        'password': PASSWORD,
+        'folderid': 0,  # 0 envia para a pasta raiz
+        'nopartial': 1
+    }
     
-    if r.status_code == 200:
-        return r.text.strip() # Retorna o link para baixar
-    return None
+    try:
+        with open(caminho_arquivo, 'rb') as f:
+            files = {'file': f}
+            r = requests.post(url, params=params, files=files)
+        return r.status_code == 200
+    except:
+        return False
 
 def processar(arquivo_txt):
     if not os.path.exists(arquivo_txt):
-        print(f"ℹ️ {arquivo_txt} não encontrado.")
+        print(f"ℹ️ Arquivo {arquivo_txt} não encontrado.")
         return
 
     with open(arquivo_txt, 'r') as f:
@@ -38,35 +49,39 @@ def processar(arquivo_txt):
 
     for url in links:
         try:
+            # Extrai o nome do programa do link
             match = re.search(r"musica=(.*?)/(.*?\.mp3)", url)
             if match:
                 prog = match.group(1).replace("_", " ").strip()
                 bloco = match.group(2).replace("_", " ").strip()
             else:
                 prog = "PROGRAMA"
-                bloco = "audio.mp3"
+                bloco = url.split('/')[-1]
 
             print(f"⬇️ Baixando: {prog}...")
             r = requests.get(url, timeout=120)
             r.raise_for_status()
 
+            # Gera o ZIP com a data
             nome_zip = compactar_arquivo(r.content, prog, bloco)
-            
-            link_final = enviar_transfer_sh(nome_zip)
-            
-            if link_final:
-                print(f"✅ SUCESSO! Link para o cliente: {link_final}")
-                # Aqui você pode salvar esse link em um TXT ou log
-            else:
-                print(f"❌ Falha no upload.")
 
+            print(f"☁️ Enviando para pCloud: {nome_zip}")
+            if enviar_pcloud(nome_zip):
+                print(f"✅ SUCESSO!")
+            else:
+                print(f"❌ Falha no upload para o pCloud.")
+
+            # Limpa o arquivo temporário no GitHub
             if os.path.exists(nome_zip):
                 os.remove(nome_zip)
             
             time.sleep(2)
         except Exception as e:
-            print(f"❌ Erro: {e}")
+            print(f"❌ Erro no link {url}: {e}")
 
 if __name__ == "__main__":
-    processar('links.txt')
-    processar('links_fds.txt')
+    if not EMAIL or not PASSWORD:
+        print("❌ ERRO: Configure PCLOUD_EMAIL e PCLOUD_PASS no GitHub!")
+    else:
+        processar('links.txt')
+        processar('links_fds.txt')
