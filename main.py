@@ -1,77 +1,42 @@
-import subprocess
-import sys
 import os
-import time
-import random
+import requests
 import re
 import datetime
 import zipfile
-
-# 1. Garante que as bibliotecas existam no GitHub
-def instalar_dependencias():
-    try:
-        import mediafire
-        import requests
-    except ImportError:
-        print("🔧 Instalando bibliotecas...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "mediafire", "requests"])
-
-instalar_dependencias()
-
-from mediafire import MediaFireApi, MediaFireUploader
-import requests
-
-# 2. Configurações (Pegas dos Secrets do GitHub)
-EMAIL = os.getenv('MF_EMAIL')
-PASSWORD = os.getenv('MF_PASSWORD')
+import time
 
 def get_data_formatada():
-    agora = datetime.datetime.now()
-    return agora.strftime("%d-%m")
+    return datetime.datetime.now().strftime("%d-%m")
 
 def compactar_arquivo(conteudo_audio, nome_programa, nome_bloco):
     data = get_data_formatada()
-    nome_zip = f"{nome_programa} {data}.zip"
-    caminho_temp_audio = f"temp_{nome_bloco}"
-    
-    with open(caminho_temp_audio, 'wb') as f:
-        f.write(conteudo_audio)
+    nome_zip = f"{nome_programa}_{data}.zip"
     
     with zipfile.ZipFile(nome_zip, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        zipf.write(caminho_temp_audio, arcname=nome_bloco)
+        zipf.writestr(nome_bloco, conteudo_audio)
     
-    if os.path.exists(caminho_temp_audio):
-        os.remove(caminho_temp_audio)
     return nome_zip
 
-def processar(arquivo_txt):
-    # Verifica se o arquivo de links existe antes de começar
-    if not os.path.exists(arquivo_txt): 
-        print(f"⚠️ Arquivo {arquivo_txt} não encontrado no repositório. Pulando...")
-        return
-
-    api = MediaFireApi()
-    uploader = MediaFireUploader(api)
+def enviar_transfer_sh(caminho_arquivo):
+    # Envia para o serviço Transfer.sh (armazenamento temporário de 14 dias)
+    print(f"☁️ Fazendo upload de {caminho_arquivo}...")
+    with open(caminho_arquivo, 'rb') as f:
+        url = f"https://transfer.sh/{caminho_arquivo}"
+        r = requests.put(url, data=f)
     
-    try:
-        # REMOVIDO 'application_id' para corrigir o erro de login
-        session = api.user_get_session_token(email=EMAIL, password=PASSWORD)
-        api.session = session
-        print(f"🔓 Login ok! Iniciando: {arquivo_txt}")
-    except Exception as e:
-        print(f"❌ Erro de login no MediaFire: {e}")
+    if r.status_code == 200:
+        return r.text.strip() # Retorna o link para baixar
+    return None
+
+def processar(arquivo_txt):
+    if not os.path.exists(arquivo_txt):
+        print(f"ℹ️ {arquivo_txt} não encontrado.")
         return
 
     with open(arquivo_txt, 'r') as f:
         links = [line.strip() for line in f if "http" in line]
 
-    if not links:
-        print(f"Empty: Nao ha links em {arquivo_txt}")
-        return
-
     for url in links:
-        time.sleep(random.randint(5, 10))
-
         try:
             match = re.search(r"musica=(.*?)/(.*?\.mp3)", url)
             if match:
@@ -79,32 +44,29 @@ def processar(arquivo_txt):
                 bloco = match.group(2).replace("_", " ").strip()
             else:
                 prog = "PROGRAMA"
-                bloco = url.split('/')[-1]
+                bloco = "audio.mp3"
 
-            print(f"⬇️ Baixando: {bloco}")
-            r = requests.get(url, timeout=180)
+            print(f"⬇️ Baixando: {prog}...")
+            r = requests.get(url, timeout=120)
             r.raise_for_status()
 
-            print(f"📦 Compactando: {prog}...")
             nome_zip = compactar_arquivo(r.content, prog, bloco)
-
-            print(f"☁️ Enviando {nome_zip}...")
-            with open(nome_zip, 'rb') as f:
-                uploader.upload(f, nome_zip)
             
-            print(f"✅ Sucesso: {nome_zip}")
+            link_final = enviar_transfer_sh(nome_zip)
+            
+            if link_final:
+                print(f"✅ SUCESSO! Link para o cliente: {link_final}")
+                # Aqui você pode salvar esse link em um TXT ou log
+            else:
+                print(f"❌ Falha no upload.")
+
             if os.path.exists(nome_zip):
                 os.remove(nome_zip)
-
+            
+            time.sleep(2)
         except Exception as e:
-            print(f"❌ Erro no link {url}: {e}")
-            time.sleep(5)
+            print(f"❌ Erro: {e}")
 
-# 3. Execução Principal
 if __name__ == "__main__":
-    if not EMAIL or not PASSWORD:
-        print("❌ Erro crítico: Você esqueceu de configurar MF_EMAIL e MF_PASSWORD nos Secrets do GitHub!")
-    else:
-        # Tenta processar os dois arquivos, mas não trava se um deles faltar
-        processar('links.txt')
-        processar('links_fds.txt')
+    processar('links.txt')
+    processar('links_fds.txt')
