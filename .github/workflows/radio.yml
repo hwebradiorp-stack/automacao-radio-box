@@ -23,16 +23,46 @@ jobs:
       - name: Instalar Dependencias
         run: pip install requests
 
-      - name: Processar Programas Diarios (Seg-Sex)
-        if: github.event.schedule == '0 8 * * 1-5' || github.event_name == 'workflow_dispatch'
-        env:
-          PCLOUD_EMAIL: ${{ secrets.PCLOUD_EMAIL }}
-          PCLOUD_PASS: ${{ secrets.PCLOUD_PASS }}
-        run: python main.py links.txt
+      - name: Verificar o dia da semana e definir arquivo alvo
+        id: verificar_dia
+        run: |
+          # Se foi disparado manualmente (workflow_dispatch), checa o dia atual do servidor
+          # Se foi pelo Schedule, verifica qual foi o cron que disparou
+          
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            CRON_TRIGGER="${{ github.event.schedule }}"
+            if [ "$CRON_TRIGGER" = "0 8 * * 6" ]; then
+              echo "ARQUIVO_ALVO=links_fds.txt" >> $GITHUB_ENV
+              echo "📆 Disparado por cron: Lote de Final de Semana"
+            else
+              echo "ARQUIVO_ALVO=links.txt" >> $GITHUB_ENV
+              echo "📆 Disparado por cron: Lote de Segunda a Sexta"
+            fi
+          else
+            # Lógica para disparo manual (workflow_dispatch) baseado no dia real
+            DIA_SEMANA=$(date +%u)
+            if [ "$DIA_SEMANA" -eq 6 ] || [ "$DIA_SEMANA" -eq 7 ]; then
+              echo "ARQUIVO_ALVO=links_fds.txt" >> $GITHUB_ENV
+              echo "📆 Disparado manualmente: Detectado Final de Semana"
+            else
+              echo "ARQUIVO_ALVO=links.txt" >> $GITHUB_ENV
+              echo "📆 Disparado manualmente: Detectado Segunda a Sexta"
+            fi
+          fi
 
-      - name: Processar Programas FDS (Sabados)
-        if: github.event.schedule == '0 8 * * 6'
-        env:
-          PCLOUD_EMAIL: ${{ secrets.PCLOUD_EMAIL }}
-          PCLOUD_PASS: ${{ secrets.PCLOUD_PASS }}
-        run: python main.py links_fds.txt
+      - name: Executar o script de download
+        run: |
+          # Altere 'processar_github.py' abaixo caso seu arquivo python tenha outro nome
+          python processar_github.py ${{ env.ARQUIVO_ALVO }}
+
+      - name: Commit e Push dos MP3 salvos para o Repositório
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          
+          # Garante que a pasta existe antes de dar o add para evitar erros caso falhe algo
+          mkdir -p PROGRAMAS_GRAVADOS
+          git add PROGRAMAS_GRAVADOS/
+          
+          # Só realiza o commit e push se houver arquivos novos de áudio gerados hoje
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Adicionando programas gravados do dia $(date +'%d-%m')" && git push)
