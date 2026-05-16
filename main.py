@@ -5,101 +5,64 @@ import datetime
 import time
 import sys
 
-# Pega direto dos Secrets do GitHub
-EMAIL = os.getenv('PCLOUD_EMAIL')
-PASSWORD = os.getenv('PCLOUD_PASS')
-BASE_URL = "https://api.pcloud.com"
-
-def obter_ou_criar_pasta(nome_pasta, parent_id=0):
-    url_list = f"{BASE_URL}/listfolder"
-    params = {'username': EMAIL, 'password': PASSWORD, 'folderid': parent_id}
-    try:
-        r = requests.get(url_list, params=params).json()
-        # Se a pasta já existir, pega o ID dela
-        if r.get('result') == 0:
-            for item in r.get('metadata', {}).get('contents', []):
-                if item['name'] == nome_pasta and item['isfolder']:
-                    return item['folderid']
-        
-        # Se não existir, cria uma nova
-        url_create = f"{BASE_URL}/createfolder"
-        params_create = {'username': EMAIL, 'password': PASSWORD, 'name': nome_pasta, 'folderid': parent_id}
-        r_create = requests.get(url_create, params=params_create).json()
-        return r_create.get('metadata', {}).get('folderid', parent_id)
-    except:
-        return parent_id
-
-def enviar_pcloud(caminho_arquivo, folder_id):
-    url = f"{BASE_URL}/uploadfile"
-    # Passa e-mail e senha direto nos parâmetros junto com a pasta
-    params = {'username': EMAIL, 'password': PASSWORD, 'folderid': folder_id, 'nopartial': 1}
-    try:
-        with open(caminho_arquivo, 'rb') as f:
-            files = {'file': (os.path.basename(caminho_arquivo), f)}
-            r = requests.post(url, params=params, files=files).json()
-            return r.get('result') == 0
-    except:
-        return False
-
 def processar(arquivo_txt):
-    if not EMAIL or not PASSWORD:
-        print("❌ Configure PCLOUD_EMAIL e PCLOUD_PASS no GitHub!")
-        return
-
-    print("🚀 Iniciando upload usando E-mail e Senha...")
+    print(f"🚀 Iniciando processamento dos links do arquivo: {arquivo_txt}...")
     
-    # Cria a pasta principal
-    id_raiz = obter_ou_criar_pasta("PROGRAMAS_GRAVADOS")
-    
-    # Cria a pasta do dia (Ex: 16-05)
+    # Cria a estrutura de pastas local: PROGRAMAS_GRAVADOS/DD-MM
     nome_pasta_dia = datetime.datetime.now().strftime('%d-%m')
-    id_pasta_dia = obter_ou_criar_pasta(nome_pasta_dia, id_raiz)
+    pasta_destino_raiz = os.path.join("PROGRAMAS_GRAVADOS", nome_pasta_dia)
 
     if not os.path.exists(arquivo_txt):
-        print(f"❌ Arquivo {arquivo_txt} não encontrado.")
+        print(f"❌ Arquivo de links '{arquivo_txt}' não encontrado.")
         return
 
-    with open(arquivo_txt, 'r') as f:
+    # Lê os links válidos do arquivo de texto
+    with open(arquivo_txt, 'r', encoding='utf-8') as f:
         links = [line.strip() for line in f if "http" in line]
+
+    if not links:
+        print("⚠️ Nenhum link válido encontrado no arquivo de texto.")
+        return
 
     for url in links:
         try:
-            # Separa o nome do programa e do arquivo
+            # Separa o nome do programa e do arquivo .mp3 pela URL
             match = re.search(r"musica=(.*?)/(.*?\.mp3)", url)
             if match:
+                # Remove os underlines para deixar as pastas limpas e legíveis no GitHub
                 prog_nome = match.group(1).replace("_", " ").strip()
-                arquivo_nome = match.group(2).replace("_", " ").strip()
+                arquivo_nome = match.group(2).strip()
             else:
                 prog_nome = "GERAL"
                 arquivo_nome = f"audio_{int(time.time())}.mp3"
 
-            # Cria a pasta do programa dentro da pasta do dia
-            id_pasta_programa = obter_ou_criar_pasta(prog_nome, id_pasta_dia)
+            # Define o caminho completo da pasta do programa específico
+            pasta_programa = os.path.join(pasta_destino_raiz, prog_nome)
+            os.makedirs(pasta_programa, exist_ok=True)
 
-            print(f"⬇️ Baixando: {arquivo_nome}...")
+            caminho_final_arquivo = os.path.join(pasta_programa, arquivo_nome)
+
+            # Verifica se o arquivo já foi baixado antes para poupar banda
+            if os.path.exists(caminho_final_arquivo):
+                print(f"⏩ {arquivo_nome} já existe no repositório. Pulando...")
+                continue
+
+            print(f"⬇️ Baixando: {arquivo_nome} para a pasta {prog_nome}...")
             r = requests.get(url, timeout=300)
             r.raise_for_status()
 
-            # Salva o arquivo local temporariamente
-            with open(arquivo_nome, 'wb') as f:
+            # Salva o arquivo permanentemente na pasta para o Git comitar depois
+            with open(caminho_final_arquivo, 'wb') as f:
                 f.write(r.content)
-
-            print(f"☁️ Enviando para pCloud: {nome_pasta_dia}/{prog_nome}/")
-            if enviar_pcloud(arquivo_nome, id_pasta_programa):
-                print(f"✅ {arquivo_nome} enviado com sucesso!")
-            else:
-                print(f"❌ Falha ao enviar {arquivo_nome}")
+            print(f"✅ {arquivo_nome} baixado e guardado com sucesso!")
             
-            # Limpa o arquivo local
-            if os.path.exists(arquivo_nome):
-                os.remove(arquivo_nome)
-            
-            # Pausa de 2 segundos para o pCloud não bloquear por excesso de velocidade
-            time.sleep(2)
+            # Pequena pausa apenas para gerenciar requisições do servidor de áudio
+            time.sleep(1)
             
         except Exception as e:
-            print(f"❌ Erro ao processar o link: {e}")
+            print(f"❌ Erro ao processar o link [{url}]: {e}")
 
 if __name__ == "__main__":
+    # Permite passar links.txt ou links_fds.txt por argumento no terminal/actions
     target_file = sys.argv[1] if len(sys.argv) > 1 else 'links.txt'
     processar(target_file)
